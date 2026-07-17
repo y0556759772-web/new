@@ -1,0 +1,99 @@
+name: Proxy Downloader
+
+run-name: dl-${{ github.event.client_payload.request_id }}
+
+on:
+  repository_dispatch:
+    types: [download]
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: ׳”׳›׳ ׳× ׳×׳™׳§׳™׳™׳× ׳₪׳׳˜
+        run: mkdir -p output
+
+      # ---------- ׳׳¡׳׳•׳ ׳•׳™׳“׳׳• (yt-dlp) ----------
+      - name: ׳”׳×׳§׳ ׳× yt-dlp + ffmpeg (׳׳¦׳‘ ׳•׳™׳“׳׳•)
+        if: github.event.client_payload.mode == 'video'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg
+          python3 -m pip install -U yt-dlp
+
+      - name: ׳”׳¨׳¦׳× bgutil pot-provider ׳‘-Docker (׳׳¦׳‘ ׳•׳™׳“׳׳•)
+        if: github.event.client_payload.mode == 'video'
+        run: |
+          docker run -d --name bgutil-provider -p 4416:4416 brainicism/bgutil-ytdlp-pot-provider
+          # ׳׳×׳ ׳–׳׳ ׳§׳¦׳¨ ׳׳¢׳׳™׳™׳” ׳©׳ ׳”׳§׳•׳ ׳˜׳™׳™׳ ׳¨
+          sleep 5
+
+      - name: ׳”׳•׳¨׳“׳× ׳•׳™׳“׳׳•
+        if: github.event.client_payload.mode == 'video'
+        env:
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+        run: |
+          set -e
+          URL="${{ github.event.client_payload.url }}"
+          QUALITY="${{ github.event.client_payload.quality }}"
+
+          COOKIE_ARGS=()
+          if [ -n "$YT_COOKIES" ]; then
+            echo "$YT_COOKIES" > cookies.txt
+            COOKIE_ARGS=(--cookies cookies.txt)
+          fi
+
+          case "$QUALITY" in
+            "1080")
+              FORMAT="bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+              ;;
+            "720")
+              FORMAT="bestvideo[height<=720]+bestaudio/best[height<=720]"
+              ;;
+            "480")
+              FORMAT="bestvideo[height<=480]+bestaudio/best[height<=480]"
+              ;;
+            "mp3")
+              FORMAT=""
+              ;;
+            *)
+              FORMAT="bestvideo+bestaudio/best"
+              ;;
+          esac
+
+          if [ "$QUALITY" == "mp3" ]; then
+            yt-dlp "${COOKIE_ARGS[@]}" \
+              --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+              -x --audio-format mp3 \
+              -o "output/%(title)s.%(ext)s" \
+              "$URL"
+          else
+            yt-dlp "${COOKIE_ARGS[@]}" \
+              --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+              -f "$FORMAT" --merge-output-format mp4 \
+              -o "output/%(title)s.%(ext)s" \
+              "$URL"
+          fi
+
+      # ---------- ׳׳¡׳׳•׳ ׳§׳•׳‘׳¥ ׳¨׳’׳™׳ (curl ׳‘׳׳‘׳“) ----------
+      - name: ׳”׳•׳¨׳“׳× ׳§׳•׳‘׳¥ ׳™׳©׳™׳¨
+        if: github.event.client_payload.mode == 'file'
+        run: |
+          set -e
+          URL="${{ github.event.client_payload.url }}"
+          FILENAME=$(basename "$URL" | cut -d'?' -f1)
+          if [ -z "$FILENAME" ]; then
+            FILENAME="downloaded_file"
+          fi
+          curl -L --fail -o "output/$FILENAME" "$URL"
+
+      # ---------- ׳”׳¢׳׳׳× ׳”׳×׳•׳¦׳׳” ׳›-artifact ----------
+      - name: ׳”׳¢׳׳׳× artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ github.event.client_payload.request_id }}
+          path: output/*
+          retention-days: 1
+          if-no-files-found: error
