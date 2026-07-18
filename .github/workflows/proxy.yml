@@ -36,6 +36,12 @@ jobs:
             sleep 2
           done
 
+      - name: Install Deno (JS runtime for yt-dlp signature/n-challenge solving)
+        if: github.event.client_payload.mode == 'video'
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> $GITHUB_PATH
+
       - name: Download video
         if: github.event.client_payload.mode == 'video'
         env:
@@ -70,7 +76,9 @@ jobs:
           esac
 
           EXTRA_ARGS=(--extractor-args "youtube:player_client=web,android;player_skip=configs" \
-                      --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416")
+                      --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+                      --js-runtimes deno \
+                      --remote-components ejs:github)
 
           if [ "$QUALITY" == "mp3" ]; then
             yt-dlp "${COOKIE_ARGS[@]}" "${EXTRA_ARGS[@]}" \
