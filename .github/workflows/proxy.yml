@@ -20,13 +20,24 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y ffmpeg
-          python3 -m pip install -U yt-dlp
+          # ׳׳×׳§׳™׳ ׳™׳ ׳’׳¨׳¡׳× nightly, ׳›׳™ PyPI ׳׳¨׳•׳‘ ׳׳₪׳’׳¨ ׳׳—׳¨׳™ ׳”׳×׳™׳§׳•׳ ׳™׳ ׳©׳ ׳™׳•׳˜׳™׳•׳‘
+          python3 -m pip install -U --pre "yt-dlp[default]"
+          # ׳”׳×׳•׳¡׳£ ׳©׳׳“׳‘׳¨ ׳¢׳ ׳©׳¨׳× ׳”-PO token (׳–׳” ׳׳” ׳©׳”׳™׳” ׳—׳¡׳¨!)
+          python3 -m pip install -U bgutil-ytdlp-pot-provider
 
       - name: Start bgutil pot-provider (Docker, video mode)
         if: github.event.client_payload.mode == 'video'
         run: |
           docker run -d --name bgutil-provider -p 4416:4416 brainicism/bgutil-ytdlp-pot-provider
-          sleep 5
+          # ׳׳•׳•׳“׳׳™׳ ׳©׳”׳©׳¨׳× ׳‘׳׳׳× ׳§׳ ׳•׳׳§׳©׳™׳‘ ׳׳₪׳ ׳™ ׳©׳׳׳©׳™׳›׳™׳
+          for i in $(seq 1 15); do
+            if curl -sf http://127.0.0.1:4416/ping >/dev/null 2>&1; then
+              echo "pot-provider is up"
+              break
+            fi
+            echo "waiting for pot-provider... ($i)"
+            sleep 2
+          done
 
       - name: Download video
         if: github.event.client_payload.mode == 'video'
@@ -61,15 +72,18 @@ jobs:
               ;;
           esac
 
+          # ׳׳›׳¨׳™׳—׳™׳ ׳©׳™׳׳•׳© ׳‘׳§׳׳™׳™׳ ׳˜׳™׳ web/android ׳©׳×׳•׳׳›׳™׳ ׳‘-PO token,
+          # ׳•׳׳•׳ ׳¢׳™׳ ׳ ׳₪׳™׳׳” ׳-client "tv" ׳©׳’׳•׳¨׳ ׳׳©׳’׳™׳׳× ׳”׳—׳×׳™׳׳”
+          EXTRA_ARGS=(--extractor-args "youtube:player_client=web,android;player_skip=configs" \
+                      --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416")
+
           if [ "$QUALITY" == "mp3" ]; then
-            yt-dlp "${COOKIE_ARGS[@]}" \
-              --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+            yt-dlp "${COOKIE_ARGS[@]}" "${EXTRA_ARGS[@]}" \
               -x --audio-format mp3 \
               -o "output/%(title)s.%(ext)s" \
               "$URL"
           else
-            yt-dlp "${COOKIE_ARGS[@]}" \
-              --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
+            yt-dlp "${COOKIE_ARGS[@]}" "${EXTRA_ARGS[@]}" \
               -f "$FORMAT" --merge-output-format mp4 \
               -o "output/%(title)s.%(ext)s" \
               "$URL"
