@@ -20,16 +20,13 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y ffmpeg
-          # ׳׳×׳§׳™׳ ׳™׳ ׳’׳¨׳¡׳× nightly, ׳›׳™ PyPI ׳׳¨׳•׳‘ ׳׳₪׳’׳¨ ׳׳—׳¨׳™ ׳”׳×׳™׳§׳•׳ ׳™׳ ׳©׳ ׳™׳•׳˜׳™׳•׳‘
           python3 -m pip install -U --pre "yt-dlp[default]"
-          # ׳”׳×׳•׳¡׳£ ׳©׳׳“׳‘׳¨ ׳¢׳ ׳©׳¨׳× ׳”-PO token (׳–׳” ׳׳” ׳©׳”׳™׳” ׳—׳¡׳¨!)
           python3 -m pip install -U bgutil-ytdlp-pot-provider
 
       - name: Start bgutil pot-provider (Docker, video mode)
         if: github.event.client_payload.mode == 'video'
         run: |
           docker run -d --name bgutil-provider -p 4416:4416 brainicism/bgutil-ytdlp-pot-provider
-          # ׳׳•׳•׳“׳׳™׳ ׳©׳”׳©׳¨׳× ׳‘׳׳׳× ׳§׳ ׳•׳׳§׳©׳™׳‘ ׳׳₪׳ ׳™ ׳©׳׳׳©׳™׳›׳™׳
           for i in $(seq 1 15); do
             if curl -sf http://127.0.0.1:4416/ping >/dev/null 2>&1; then
               echo "pot-provider is up"
@@ -72,8 +69,6 @@ jobs:
               ;;
           esac
 
-          # ׳׳›׳¨׳™׳—׳™׳ ׳©׳™׳׳•׳© ׳‘׳§׳׳™׳™׳ ׳˜׳™׳ web/android ׳©׳×׳•׳׳›׳™׳ ׳‘-PO token,
-          # ׳•׳׳•׳ ׳¢׳™׳ ׳ ׳₪׳™׳׳” ׳-client "tv" ׳©׳’׳•׳¨׳ ׳׳©׳’׳™׳׳× ׳”׳—׳×׳™׳׳”
           EXTRA_ARGS=(--extractor-args "youtube:player_client=web,android;player_skip=configs" \
                       --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416")
 
