@@ -68,7 +68,9 @@ jobs:
           # tv/android clients still return direct HTTPS formats when running from
           # datacenter IPs (GitHub Actions runners); the web client is forced into
           # SABR-only mode there and returns "only images available".
-          EXTRA_ARGS=(--extractor-args "youtube:player_client=tv,android,web;player_skip=configs" \
+          # -v = verbose log, to see which client returns which error.
+          EXTRA_ARGS=(-v \
+                      --extractor-args "youtube:player_client=tv,android,web;player_skip=configs" \
                       --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
                       --js-runtimes deno \
                       --remote-components ejs:github)
