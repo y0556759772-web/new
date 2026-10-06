@@ -49,6 +49,17 @@ jobs:
           source = html.unescape(post.group(1)) if post else page_url
           (out / "source.txt").write_text("Public Telegram channel: " + page_url + "\nSource post: " + source + "\nPhoto belongs to its original publisher.\n", encoding="utf-8")
           print(json.dumps({"source":source, "bytes":len(data), "file":"telegram-photo"+suffix}))
+      - name: Prepare downloadable ZIP transfer
+        shell: python
+        run: |
+          import pathlib, zipfile, base64, io
+          buffer = io.BytesIO()
+          with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+              for item in pathlib.Path("result").iterdir():
+                  archive.write(item, item.name)
+          encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+          for i in range(0, len(encoded), 3000):
+              print("ZIP_CHUNK:" + encoded[i:i+3000])
       - uses: actions/upload-artifact@v4
         with:
           name: telegram-photo-sample
