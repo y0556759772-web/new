@@ -1,4 +1,4 @@
-name: One-time Telegram image sample
+name: Outfits five-post archive pilot
 on:
   push:
     paths:
@@ -8,61 +8,80 @@ permissions:
 jobs:
   sample:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
-      - name: Download one public fashion photo
+      - name: Install HTML parser
+        run: python -m pip install beautifulsoup4
+      - name: Archive five public posts
         shell: python
         run: |
-          import urllib.request, re, html, pathlib, json
-          page_url = "https://t.me/s/tfioutfits"
-          def fetch(url, maximum):
-              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-              with urllib.request.urlopen(req, timeout=35) as response:
-                  body = response.read(maximum + 1)
-                  if len(body) > maximum:
-                      raise RuntimeError("Response too large")
-                  return body
-          page = fetch(page_url, 4000000).decode("utf-8")
-          matches = re.findall(r'<a\b[^>]*class="[^"]*tgme_widget_message_photo_wrap[^"]*"[^>]*>', page)
-          if not matches:
-              raise RuntimeError("No public photo found")
-          tag = matches[0]
-          photo = re.search(r"background-image:url\('([^']+)'\)", tag)
-          if not photo:
-              raise RuntimeError("No photo URL found")
-          photo_url = html.unescape(photo.group(1))
+          import urllib.request, re, pathlib, json, base64, zipfile, io
           from urllib.parse import urlparse
-          parsed = urlparse(photo_url)
-          if parsed.scheme != "https" or not parsed.hostname or not (parsed.hostname.endswith(".telesco.pe") or parsed.hostname.endswith(".telegram-cdn.org")):
-              raise RuntimeError("Unexpected image host")
-          data = fetch(photo_url, 20000000)
-          if data.startswith(bytes.fromhex("ffd8ff")):
-              suffix = ".jpg"
-          elif data.startswith(bytes.fromhex("89504e470d0a1a0a")):
-              suffix = ".png"
-          else:
-              raise RuntimeError("Response is not a JPEG or PNG image")
-          out = pathlib.Path("result")
-          out.mkdir()
-          (out / ("telegram-photo" + suffix)).write_bytes(data)
-          post = re.search(r'href="([^"]+)"', tag)
-          source = html.unescape(post.group(1)) if post else page_url
-          (out / "source.txt").write_text("Public Telegram channel: " + page_url + "\nSource post: " + source + "\nPhoto belongs to its original publisher.\n", encoding="utf-8")
-          print(json.dumps({"source":source, "bytes":len(data), "file":"telegram-photo"+suffix}))
-      - name: Prepare downloadable ZIP transfer
-        shell: python
-        run: |
-          import pathlib, zipfile, base64, io
-          buffer = io.BytesIO()
-          with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-              for item in pathlib.Path("result").iterdir():
-                  archive.write(item, item.name)
-          encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-          for i in range(0, len(encoded), 3000):
-              print("ZIP_CHUNK:" + encoded[i:i+3000])
+          from bs4 import BeautifulSoup
+          def fetch(url, maximum=4000000):
+              req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"})
+              with urllib.request.urlopen(req,timeout=40) as response:
+                  data=response.read(maximum+1)
+                  if len(data)>maximum: raise RuntimeError("File exceeds limit")
+                  return data
+          page_url="https://t.me/s/outfits"
+          soup=BeautifulSoup(fetch(page_url),"html.parser")
+          posts=soup.select(".tgme_widget_message[data-post]")
+          posts=sorted(posts,key=lambda p:int(p["data-post"].split("/")[-1]))[-5:]
+          if len(posts)!=5: raise RuntimeError("Fewer than five posts available")
+          root=pathlib.Path("result"); root.mkdir()
+          manifest=[]
+          for post in posts:
+              post_id=post["data-post"].split("/")[-1]
+              stamp=post.select_one("time[datetime]")
+              date=stamp["datetime"] if stamp else "unknown"
+              folder=root/(date[:10]+"_"+post_id); folder.mkdir()
+              text_el=post.select_one(".tgme_widget_message_text")
+              original_html=str(text_el) if text_el else ""
+              links=[]
+              if text_el:
+                  for a in text_el.select("a[href]"):
+                      links.append({"text":a.get_text(),"url":a["href"]})
+                  for br in text_el.find_all("br"): br.replace_with("\n")
+                  text=text_el.get_text()
+              else: text=""
+              source="https://t.me/"+post["data-post"]
+              (folder/"message.txt").write_text(text,encoding="utf-8")
+              metadata={"id":post_id,"date":date,"source":source,"links":links,"images":[],"unavailable":[]}
+              images=post.select("a.tgme_widget_message_photo_wrap")
+              seen=set()
+              for element in images:
+                  match=re.search(r"background-image:\s*url\(['\"]?([^'\"\)]+)",element.get("style",""))
+                  if not match: continue
+                  url=match.group(1)
+                  if url in seen: continue
+                  seen.add(url)
+                  host=urlparse(url).hostname or ""
+                  if not host.endswith((".telesco.pe",".telegram-cdn.org")):
+                      metadata["unavailable"].append("Unexpected image host"); continue
+                  try:
+                      data=fetch(url,15000000)
+                      if data.startswith(bytes.fromhex("ffd8ff")): ext=".jpg"
+                      elif data.startswith(bytes.fromhex("89504e470d0a1a0a")): ext=".png"
+                      else: raise RuntimeError("Not a supported image")
+                      name="image-"+str(len(metadata["images"])+1).zfill(2)+ext
+                      (folder/name).write_bytes(data); metadata["images"].append(name)
+                  except Exception as e: metadata["unavailable"].append(str(e))
+              if post.select("video,.tgme_widget_message_video_player,.tgme_widget_message_video"): metadata["unavailable"].append("Video not downloaded in this photo-only pilot")
+              (folder/"source.json").write_text(json.dumps(metadata,ensure_ascii=False,indent=2),encoding="utf-8")
+              manifest.append({**metadata,"folder":folder.name,"text_chars":len(text)})
+          (root/"manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding="utf-8")
+          print("MANIFEST:"+json.dumps(manifest,ensure_ascii=False))
+          buf=io.BytesIO()
+          with zipfile.ZipFile(buf,"w",zipfile.ZIP_DEFLATED) as z:
+              for file in root.rglob("*"):
+                  if file.is_file(): z.write(file,str(file.relative_to(root)))
+          encoded=base64.b64encode(buf.getvalue()).decode()
+          for i in range(0,len(encoded),3000): print("ZIP_CHUNK:"+encoded[i:i+3000])
+          
       - uses: actions/upload-artifact@v4
         with:
-          name: telegram-photo-sample
+          name: outfits-five-posts
           path: result/
           retention-days: 1
           if-no-files-found: error
