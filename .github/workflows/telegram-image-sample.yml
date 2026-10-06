@@ -1,0 +1,57 @@
+name: One-time Telegram image sample
+on:
+  push:
+    paths:
+      - '.github/workflows/telegram-image-sample.yml'
+permissions:
+  contents: read
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Download one public recipe photo
+        shell: python
+        run: |
+          import urllib.request, re, html, pathlib, json
+          page_url = "https://t.me/s/matkonim19"
+          def fetch(url, maximum):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+              with urllib.request.urlopen(req, timeout=35) as response:
+                  body = response.read(maximum + 1)
+                  if len(body) > maximum:
+                      raise RuntimeError("Response too large")
+                  return body
+          page = fetch(page_url, 4000000).decode("utf-8")
+          matches = re.findall(r'<a\b[^>]*class="[^"]*tgme_widget_message_photo_wrap[^"]*"[^>]*>', page)
+          if not matches:
+              raise RuntimeError("No public photo found")
+          tag = matches[0]
+          photo = re.search(r"background-image:url\('([^']+)'\)", tag)
+          if not photo:
+              raise RuntimeError("No photo URL found")
+          photo_url = html.unescape(photo.group(1))
+          from urllib.parse import urlparse
+          parsed = urlparse(photo_url)
+          if parsed.scheme != "https" or not parsed.hostname or not (parsed.hostname.endswith(".telesco.pe") or parsed.hostname.endswith(".telegram-cdn.org")):
+              raise RuntimeError("Unexpected image host")
+          data = fetch(photo_url, 20000000)
+          if data.startswith(bytes.fromhex("ffd8ff")):
+              suffix = ".jpg"
+          elif data.startswith(bytes.fromhex("89504e470d0a1a0a")):
+              suffix = ".png"
+          else:
+              raise RuntimeError("Response is not a JPEG or PNG image")
+          out = pathlib.Path("result")
+          out.mkdir()
+          (out / ("telegram-photo" + suffix)).write_bytes(data)
+          post = re.search(r'href="([^"]+)"', tag)
+          source = html.unescape(post.group(1)) if post else page_url
+          (out / "source.txt").write_text("Public Telegram channel: " + page_url + "\nSource post: " + source + "\nPhoto belongs to its original publisher.\n", encoding="utf-8")
+          print(json.dumps({"source":source, "bytes":len(data), "file":"telegram-photo"+suffix}))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telegram-photo-sample
+          path: result/
+          retention-days: 1
+          if-no-files-found: error
