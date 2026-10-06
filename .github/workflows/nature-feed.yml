@@ -1,0 +1,31 @@
+name: Build Israeli nature feed
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/nature-feed.yml'
+      - 'nature-feed/collect.py'
+permissions:
+  contents: write
+concurrency:
+  group: nature-feed
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install beautifulsoup4
+      - run: python nature-feed/collect.py
+      - name: Check page and image references
+        run: |
+          node -e "const fs=require('fs');const vm=require('vm');new vm.Script(fs.readFileSync('nature-feed/index.html','utf8').split('<script>')[1].split('</script>')[0]);const d=JSON.parse(fs.readFileSync('nature-feed/feed.json'));for(const p of d.posts)for(const i of p.images)if(!fs.existsSync('nature-feed/'+i))throw Error(i);console.log('Page script and image references verified')"
+      - name: Publish collected feed
+        run: |
+          git config user.name "Nature feed"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add nature-feed/feed.json nature-feed/images
+          git diff --staged --quiet && exit 0
+          git commit -m "Refresh public nature channel snapshot"
+          git push
