@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f4f6fb">
+<title>רגע קטן · עמוד הניסוי</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#f4f6fb;color:#203047;font-family:Arial,sans-serif;display:grid;place-items:center;padding:24px}main{width:min(100%,660px)}.badge{display:inline-block;background:#e7edf9;color:#365fb4;border-radius:30px;padding:9px 15px;font-size:14px}.card{background:white;border:1px solid #e3e8f0;border-radius:28px;padding:clamp(26px,6vw,52px);margin:20px 0;box-shadow:0 20px 65px #253e6910}.sun{font-size:50px}h1{font-size:clamp(32px,7vw,48px);margin:20px 0 12px;letter-spacing:-1px}p{line-height:1.8;color:#58677b;font-size:18px}button{border:0;border-radius:14px;background:#345fd0;color:white;font:700 17px Arial;padding:16px 24px;cursor:pointer}button:hover{background:#284dab}button:focus-visible{outline:3px solid #e6a833;outline-offset:4px}#result{min-height:64px;padding-top:18px;color:#345fd0;font-size:17px;line-height:1.7}.footer{font-size:13px;color:#728096;line-height:1.8}noscript{display:block;padding:16px;color:#943d26}
+</style>
+</head>
+<body>
+<main>
+<span class="badge">ניסוי קטן באינטרנט</span>
+<section class="card">
+<div class="sun" aria-hidden="true">☀</div>
+<h1>טוב שבאת.</h1>
+<p>זהו עמוד קטן עם מטרה פשוטה: לבדוק שאפשר לפתוח אותו וללחוץ על כפתור.</p>
+<button type="button" id="hello">לחיצה קטנה, חיוך גדול</button>
+<div id="result" role="status" aria-live="polite">העמוד נטען. עכשיו אפשר לנסות את הכפתור.</div>
+<noscript>JavaScript כבוי בדפדפן הזה. הטקסט נטען, אך הכפתור זקוק ל־JavaScript.</noscript>
+</section>
+<div class="footer">עמוד בדיקה · 6 באוקטובר 2026<br>אם הכפתור מגיב, גם הקוד האינטראקטיבי פועל בדפדפן שלך.</div>
+</main>
+<script>
+(function(){
+var count=0;
+var messages=['הכפתור עובד! שיהיה לך יום נעים.','עוד לחיצה, עוד סיבה לחייך.','הניסוי ממשיך לעבוד מצוין.'];
+document.getElementById('hello').addEventListener('click',function(){
+document.getElementById('result').textContent=messages[count%messages.length]+' מספר לחיצות: '+(++count);
+});
+})();
+</script>
+</body>
+</html>
