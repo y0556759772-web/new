@@ -104,7 +104,7 @@ jobs:
               except Exception:
                   raise SystemExit('cookies check: invalid Netscape rows')
               yt = [c for c in jar if c.domain.lstrip('.') == 'youtube.com' or c.domain.endswith('.youtube.com')]
-              active = [c for c in yt if c.expires is None or c.expires > time.time()]
+              active = [c for c in yt if c.expires in (None, 0) or c.expires > time.time()]
               login = [c for c in active if c.name in ('SID', '__Secure-1PSID', '__Secure-3PSID')]
               print(f'cookies check: youtube={len(yt)}, unexpired={len(active)}, login={len(login)}')
               print('cookies check: presence does not prove YouTube accepts the session')
