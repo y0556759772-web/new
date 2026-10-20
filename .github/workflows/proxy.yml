@@ -1,107 +1,136 @@
 name: Proxy Downloader
-run-name: dl-${{ github.event.client_payload.request_id }}
+run-name: dl-${{ github.event.client_payload.request_id || inputs.request_id || github.run_id }}
 on:
   repository_dispatch:
     types: [download]
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Video or direct file URL
+        required: true
+        type: string
+      mode:
+        description: Download mode
+        type: choice
+        options: [video, file]
+        default: video
+      quality:
+        description: Quality
+        type: choice
+        options: [best, '1080', '720', '480', mp3]
+        default: '720'
+      request_id:
+        description: Optional request identifier
+        type: string
+permissions:
+  contents: read
 jobs:
   download:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      URL_IN: ${{ github.event.client_payload.url || inputs.url }}
+      MODE_IN: ${{ github.event.client_payload.mode || inputs.mode }}
+      QUALITY_IN: ${{ github.event.client_payload.quality || inputs.quality || 'best' }}
+      REQUEST_ID: ${{ github.event.client_payload.request_id || inputs.request_id || github.run_id }}
     steps:
-      - name: Prepare output folder
-        run: mkdir -p output
-      # ---------- Video route (yt-dlp) ----------
-      - name: Install yt-dlp and ffmpeg (video mode)
-        if: github.event.client_payload.mode == 'video'
+      - name: Validate request
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ffmpeg
-          python3 -m pip install -U --pre "yt-dlp[default]"
-          python3 -m pip install -U bgutil-ytdlp-pot-provider
-      - name: Start bgutil pot-provider (Docker, video mode)
-        if: github.event.client_payload.mode == 'video'
+          python3 - <<'PY'
+          import os, re, ipaddress
+          from urllib.parse import urlsplit
+          u = urlsplit(os.environ['URL_IN'])
+          if u.scheme not in ('http', 'https') or not u.hostname or u.username or u.password:
+              raise SystemExit('Invalid HTTP(S) URL')
+          host = u.hostname.lower().rstrip('.')
+          if host == 'localhost' or host.endswith(('.localhost', '.local')):
+              raise SystemExit('Local addresses are not supported')
+          try:
+              if not ipaddress.ip_address(host).is_global:
+                  raise SystemExit('Non-public IP addresses are not supported')
+          except ValueError:
+              pass
+          if os.environ['MODE_IN'] not in ('video', 'file'):
+              raise SystemExit('Invalid download mode')
+          if os.environ['QUALITY_IN'] not in ('best', '1080', '720', '480', 'mp3'):
+              raise SystemExit('Invalid quality')
+          if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', os.environ['REQUEST_ID']):
+              raise SystemExit('Invalid request identifier')
+          os.makedirs('output', exist_ok=True)
+          PY
+      - name: Install yt-dlp and ffmpeg
+        if: env.MODE_IN == 'video'
         run: |
-          docker run -d --name bgutil-provider -p 4416:4416 brainicism/bgutil-ytdlp-pot-provider
-          for i in $(seq 1 15); do
-            if curl -sf http://127.0.0.1:4416/ping >/dev/null 2>&1; then
-              echo "pot-provider is up"
-              break
-            fi
-            echo "waiting for pot-provider... ($i)"
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install -U --pre 'yt-dlp[default]' bgutil-ytdlp-pot-provider
+          curl --fail --silent --show-error --location https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+      - name: Start PO token provider
+        if: env.MODE_IN == 'video'
+        run: |
+          docker run -d --name bgutil-provider -p 127.0.0.1:4416:4416 brainicism/bgutil-ytdlp-pot-provider
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:4416/ping >/dev/null; then exit 0; fi
             sleep 2
           done
-      - name: Install Deno (JS runtime for yt-dlp signature/n-challenge solving)
-        if: github.event.client_payload.mode == 'video'
-        run: |
-          curl -fsSL https://deno.land/install.sh | sh
-          echo "$HOME/.deno/bin" >> $GITHUB_PATH
+          echo 'PO token provider did not start'
+          exit 1
       - name: Download video
-        if: github.event.client_payload.mode == 'video'
+        if: env.MODE_IN == 'video'
         env:
           YT_COOKIES: ${{ secrets.YT_COOKIES }}
+          YT_PROXY: ${{ secrets.YT_PROXY }}
         run: |
-          set -e
-          URL="${{ github.event.client_payload.url }}"
-          QUALITY="${{ github.event.client_payload.quality }}"
-          COOKIE_ARGS=()
-          if [ -n "$YT_COOKIES" ]; then
-            echo "$YT_COOKIES" > cookies.txt
-            COOKIE_ARGS=(--cookies cookies.txt)
-          fi
-          case "$QUALITY" in
-            "1080")
-              FORMAT="bestvideo[height<=1080]+bestaudio/best[height<=1080]/best"
-              ;;
-            "720")
-              FORMAT="bestvideo[height<=720]+bestaudio/best[height<=720]/best"
-              ;;
-            "480")
-              FORMAT="bestvideo[height<=480]+bestaudio/best[height<=480]/best"
-              ;;
-            "mp3")
-              FORMAT=""
-              ;;
-            *)
-              FORMAT="bestvideo+bestaudio/best"
-              ;;
-          esac
-          # tv/android clients still return direct HTTPS formats when running from
-          # datacenter IPs (GitHub Actions runners); the web client is forced into
-          # SABR-only mode there and returns "only images available".
-          # -v = verbose log, to see which client returns which error.
-          EXTRA_ARGS=(-v \
-                      --extractor-args "youtube:player_client=tv,android,web;player_skip=configs" \
-                      --extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416" \
-                      --js-runtimes deno \
-                      --remote-components ejs:github)
-          if [ "$QUALITY" == "mp3" ]; then
-            yt-dlp "${COOKIE_ARGS[@]}" "${EXTRA_ARGS[@]}" \
-              -x --audio-format mp3 \
-              -o "output/%(title)s.%(ext)s" \
-              "$URL"
+          set -euo pipefail
+          COOKIE_PATH="$RUNNER_TEMP/youtube-cookies.txt"
+          trap 'rm -f "$COOKIE_PATH"' EXIT
+          export COOKIE_PATH
+          python3 - <<'PY'
+          import os, http.cookiejar, time
+          text = os.environ.get('YT_COOKIES', '').strip()
+          if not text:
+              print('cookies check: secret empty; using anonymous access')
+          else:
+              if text.splitlines()[0].strip() not in ('# Netscape HTTP Cookie File', '# HTTP Cookie File'):
+                  raise SystemExit('cookies check: invalid Netscape header; upload a cookies.txt export')
+              path = os.environ['COOKIE_PATH']
+              fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+              with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                  f.write(text.replace('\r\n', '\n') + '\n')
+              jar = http.cookiejar.MozillaCookieJar(path)
+              try:
+                  jar.load(ignore_discard=True, ignore_expires=True)
+              except Exception:
+                  raise SystemExit('cookies check: invalid Netscape rows')
+              yt = [c for c in jar if c.domain.lstrip('.') == 'youtube.com' or c.domain.endswith('.youtube.com')]
+              active = [c for c in yt if c.expires is None or c.expires > time.time()]
+              login = [c for c in active if c.name in ('SID', '__Secure-1PSID', '__Secure-3PSID')]
+              print(f'cookies check: youtube={len(yt)}, unexpired={len(active)}, login={len(login)}')
+              print('cookies check: presence does not prove YouTube accepts the session')
+              if not active:
+                  raise SystemExit('cookies check: no unexpired YouTube cookies; update YT_COOKIES')
+          PY
+          ARGS=(--ignore-config --no-playlist --no-progress --newline --socket-timeout 30 --retries 3 --fragment-retries 3 --js-runtimes deno --extractor-args 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416' --restrict-filenames --trim-filenames 160 -o 'output/%(title)s [%(id)s].%(ext)s')
+          if [ -f "$COOKIE_PATH" ]; then ARGS+=(--cookies "$COOKIE_PATH"); fi
+          if [ -n "$YT_PROXY" ]; then ARGS+=(--proxy "$YT_PROXY"); echo 'proxy: enabled'; fi
+          if [ "$QUALITY_IN" = mp3 ]; then
+            ARGS+=(-x --audio-format mp3)
           else
-            yt-dlp "${COOKIE_ARGS[@]}" "${EXTRA_ARGS[@]}" \
-              -f "$FORMAT" --merge-output-format mp4 \
-              -o "output/%(title)s.%(ext)s" \
-              "$URL"
+            FORMAT='bv*+ba/b'
+            if [ "$QUALITY_IN" != best ]; then FORMAT="bv*[height<=$QUALITY_IN]+ba/b[height<=$QUALITY_IN]"; fi
+            ARGS+=(-f "$FORMAT" --merge-output-format mp4)
           fi
-      # ---------- Direct file route (curl only) ----------
+          yt-dlp "${ARGS[@]}" -- "$URL_IN"
       - name: Download direct file
-        if: github.event.client_payload.mode == 'file'
+        if: env.MODE_IN == 'file'
         run: |
-          set -e
-          URL="${{ github.event.client_payload.url }}"
-          FILENAME=$(basename "$URL" | cut -d'?' -f1)
-          if [ -z "$FILENAME" ]; then
-            FILENAME="downloaded_file"
-          fi
-          curl -L --fail -o "output/$FILENAME" "$URL"
-      # ---------- Upload result as artifact ----------
+          curl --location --fail --show-error --retry 2 --max-time 1500 --proto '=http,https' --proto-redir '=http,https' --output output/downloaded-file -- "$URL_IN"
       - name: Upload artifact
-        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: result-${{ github.event.client_payload.request_id }}
+          name: result-${{ env.REQUEST_ID }}
           path: output/*
           retention-days: 1
           if-no-files-found: error
+          compression-level: 0
