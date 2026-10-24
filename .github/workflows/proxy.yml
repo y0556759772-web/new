@@ -19,6 +19,11 @@ on:
         type: choice
         options: [best, '1080', '720', '480', mp3]
         default: '720'
+      subs:
+        description: Hebrew subtitles embedded in the video
+        type: choice
+        options: [none, he]
+        default: none
       request_id:
         description: Optional request identifier
         type: string
@@ -32,6 +37,7 @@ jobs:
       URL_IN: ${{ github.event.client_payload.url || inputs.url }}
       MODE_IN: ${{ github.event.client_payload.mode || inputs.mode }}
       QUALITY_IN: ${{ github.event.client_payload.quality || inputs.quality || 'best' }}
+      SUBS_IN: ${{ github.event.client_payload.subs || inputs.subs || 'none' }}
       REQUEST_ID: ${{ github.event.client_payload.request_id || inputs.request_id || github.run_id }}
     steps:
       - name: Validate request
@@ -54,6 +60,8 @@ jobs:
               raise SystemExit('Invalid download mode')
           if os.environ['QUALITY_IN'] not in ('best', '1080', '720', '480', 'mp3'):
               raise SystemExit('Invalid quality')
+          if os.environ['SUBS_IN'] not in ('none', 'he'):
+              raise SystemExit('Invalid subtitles option')
           if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', os.environ['REQUEST_ID']):
               raise SystemExit('Invalid request identifier')
           os.makedirs('output', exist_ok=True)
@@ -120,6 +128,10 @@ jobs:
             FORMAT='bv*+ba/b'
             if [ "$QUALITY_IN" != best ]; then FORMAT="bv*[height<=$QUALITY_IN]+ba/b[height<=$QUALITY_IN]"; fi
             ARGS+=(-f "$FORMAT" --merge-output-format mp4)
+            if [ "$SUBS_IN" = he ]; then
+              # Hebrew subtitles (uploaded, else auto-generated) embedded into the mp4; a subtitle failure only warns
+              ARGS+=(--write-subs --write-auto-subs --sub-langs 'he,iw,he-orig' --embed-subs)
+            fi
           fi
           yt-dlp "${ARGS[@]}" -- "$URL_IN"
       - name: Download direct file
