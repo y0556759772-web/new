@@ -54,8 +54,8 @@ small{color:var(--muted)}
 <button id="tab-download" type="button" role="tab" aria-controls="panel-download" aria-selected="true">הורדה</button>
 <button id="tab-search" type="button" role="tab" aria-controls="panel-search" aria-selected="false" tabindex="-1">חיפוש ביוטיוב</button></div>
 <div id="panel-download" role="tabpanel" aria-labelledby="tab-download">
-<details class="connection"><summary>הגדרת חיבור אישי ל-GitHub</summary><p>מאגר: y0556759772-web/new</p><label for="token">טוקן GitHub אישי</label><input id="token" type="password" dir="ltr" autocomplete="off"><small>פרטי החיבור נשמרים בזיכרון הלשונית בלבד.</small><br><button id="check" class="ghost">בדוק חיבור</button></details>
-<p id="selected-video" class="selection" hidden></p>
+<details class="connection"><summary>הגדרת חיבור אישי ל-GitHub</summary><p>מאגר: y0556759772-web/new</p><label for="token">טוקן GitHub אישי</label><input id="token" type="password" dir="ltr" autocomplete="off"><small>המפתחות נשמרים בדפדפן במכשיר זה. יש להשתמש במכשיר אישי.</small><br><button id="check" class="ghost">בדוק חיבור</button></details>
+<p><button type="button" id="forget-credentials" class="ghost">מחק מפתחות שמורים</button></p><p id="credential-status" role="status" aria-live="polite"></p><p id="selected-video" class="selection" hidden></p>
   <section>
     <h2>הורדה חדשה</h2>
     <label for="url">קישור</label>
@@ -96,7 +96,7 @@ small{color:var(--muted)}
     <div id="files"></div>
   </section>
 </div><div id="panel-search" role="tabpanel" aria-labelledby="tab-search" hidden>
-<section><details><summary>הגדרת מפתח לחיפוש</summary><label for="youtube-key">מפתח YouTube Data API</label><input id="youtube-key" type="password" dir="ltr" autocomplete="off"><small>נדרש לחיפוש בלבד. נשמר בזיכרון הלשונית.</small></details><h2>מה תרצה למצוא?</h2><p class="sub">חפש לפי שם, נושא, זמר או ערוץ. אפשר גם להדביק קישור ישיר.</p>
+<section><details><summary>הגדרת מפתח לחיפוש</summary><label for="youtube-key">מפתח YouTube Data API</label><input id="youtube-key" type="password" dir="ltr" autocomplete="off"><small>נדרש לחיפוש בלבד. נשמר בדפדפן במכשיר זה.</small></details><h2>מה תרצה למצוא?</h2><p class="sub">חפש לפי שם, נושא, זמר או ערוץ. אפשר גם להדביק קישור ישיר.</p>
 <form id="search-form"><label for="search-query">חיפוש סרטונים</label><div class="search-bar"><input id="search-query" type="search" placeholder="למשל: שירים לשבת, שיעור על פרשת השבוע…" maxlength="300"><button id="search-submit" type="submit">חפש</button></div>
 <div class="filter-grid"><div><label for="search-order">מיון</label><select id="search-order"><option value="relevance">התאמה חכמה</option><option value="date">החדשים ביותר</option><option value="viewCount">הנצפים ביותר</option></select></div>
 <div><label for="search-duration">אורך הסרטון</label><select id="search-duration"><option value="any">כל אורך</option><option value="short">עד 4 דקות</option><option value="medium">4–20 דקות</option><option value="long">מעל 20 דקות</option></select></div>
@@ -1535,5 +1535,32 @@ for(const name of ['download','search'])$('tab-'+name).addEventListener('keydown
 });
 
 </script>
-</div><script>document.getElementById('access-form').addEventListener('submit',async event=>{event.preventDefault();const input=document.getElementById('access-code'),error=document.getElementById('access-error');try{const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(input.value.trim()))),b=>b.toString(16).padStart(2,'0')).join('');if(hash!=='080931c4e89b764d68306d6f9fcef7cc3b90fe11ce3f3735fe2d9b1c089b5b30'){error.textContent='הקוד שגוי. נסה שוב.';input.select();return;}input.value='';document.getElementById('access-gate').remove();const app=document.getElementById('protected-app');app.hidden=false;app.inert=false;for(const old of app.querySelectorAll('script[data-locked-script]')){const script=document.createElement('script');for(const a of old.attributes)if(!['type','data-locked-script'].includes(a.name))script.setAttribute(a.name,a.value);script.textContent=old.textContent;old.replaceWith(script);}document.getElementById('url').focus();}catch(e){error.textContent='לא ניתן לפתוח את האתר. יש להשתמש בקישור HTTPS ובדפדפן מעודכן.';}});</script></body>
+<script type="text/plain" data-locked-script>(() => {
+  const prefix = 'youtube-download.credentials.v1.';
+  const fields = ['token', 'youtube-key'];
+  const status = document.getElementById('credential-status');
+  function report(message) { status.textContent = message; }
+  for (const id of fields) {
+    const field = document.getElementById(id);
+    try { field.value = localStorage.getItem(prefix + id) || ''; }
+    catch { report('הדפדפן אינו מאפשר שמירה. אפשר להשתמש במפתחות בלשונית הנוכחית.'); }
+    field.addEventListener('input', () => {
+      try {
+        const value = field.value.trim();
+        if (value) localStorage.setItem(prefix + id, value);
+        else localStorage.removeItem(prefix + id);
+        report('פרטי החיבור נשמרו בדפדפן זה.');
+      } catch { report('השמירה נכשלה. המפתחות זמינים רק בלשונית הנוכחית.'); }
+    });
+  }
+  document.getElementById('forget-credentials').addEventListener('click', () => {
+    let failed = false;
+    for (const id of fields) {
+      document.getElementById(id).value = '';
+      try { localStorage.removeItem(prefix + id); } catch { failed = true; }
+    }
+    report(failed ? 'לא ניתן למחוק מהאחסון. יש למחוק את נתוני האתר בהגדרות הדפדפן.' : 'המפתחות השמורים נמחקו.');
+  });
+})();
+</script></div><script>document.getElementById('access-form').addEventListener('submit',async event=>{event.preventDefault();const input=document.getElementById('access-code'),error=document.getElementById('access-error');try{const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(input.value.trim()))),b=>b.toString(16).padStart(2,'0')).join('');if(hash!=='080931c4e89b764d68306d6f9fcef7cc3b90fe11ce3f3735fe2d9b1c089b5b30'){error.textContent='הקוד שגוי. נסה שוב.';input.select();return;}input.value='';document.getElementById('access-gate').remove();const app=document.getElementById('protected-app');app.hidden=false;app.inert=false;for(const old of app.querySelectorAll('script[data-locked-script]')){const script=document.createElement('script');for(const a of old.attributes)if(!['type','data-locked-script'].includes(a.name))script.setAttribute(a.name,a.value);script.textContent=old.textContent;old.replaceWith(script);}document.getElementById('url').focus();}catch(e){error.textContent='לא ניתן לפתוח את האתר. יש להשתמש בקישור HTTPS ובדפדפן מעודכן.';}});</script></body>
 </html>
