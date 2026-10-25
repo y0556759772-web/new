@@ -3,6 +3,8 @@ run-name: dl-${{ github.event.client_payload.request_id || inputs.request_id || 
 on:
   repository_dispatch:
     types: [download]
+  schedule:
+    - cron: '0 */5 * * *'
   workflow_dispatch:
     inputs:
       url:
@@ -30,7 +32,23 @@ on:
 permissions:
   contents: write
 jobs:
+  cleanup:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete all download releases
+        run: |
+          # every 5 hours: remove all temporary download releases (skips ones younger than 30 minutes so a download in progress is not cut)
+          CUTOFF=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh api "repos/$GH_REPO/releases?per_page=100" --jq ".[] | select(.tag_name | startswith(\"dl-\")) | select(.created_at < \"$CUTOFF\") | .tag_name" | while read -r tag; do
+            gh release delete "$tag" --cleanup-tag --yes || true
+          done
   download:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -144,8 +162,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # remove old download releases (older than 1 day) so the repo stays clean
-          CUTOFF=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)
+          # remove old download releases (older than 5 hours) so the repo stays clean
+          CUTOFF=$(date -u -d '5 hours ago' +%Y-%m-%dT%H:%M:%SZ)
           gh api "repos/${{ github.repository }}/releases?per_page=100" --jq ".[] | select(.tag_name | startswith(\"dl-\")) | select(.created_at < \"$CUTOFF\") | .tag_name" | while read -r tag; do
             gh release delete "$tag" --cleanup-tag --yes || true
           done
