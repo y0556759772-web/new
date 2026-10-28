@@ -1328,25 +1328,24 @@ async function run() {
       const failed=(jobs.jobs||[]).flatMap(j=>j.steps||[]).filter(s=>s.conclusion==='failure').map(s=>s.name);
       throw new Error(`הריצה הסתיימה במצב ${info.conclusion}. ${failed.length?'שלב שנכשל: '+failed.join(', '):''} פתח את הריצה לקבלת פירוט.`);
     }
-    const data=await (await gh('/actions/runs/'+info.id+'/artifacts')).json();
-    const artifact=(data.artifacts||[]).find(a=>a.name==='result-'+id&&!a.expired);
-    if(!artifact)throw new Error('הריצה הצליחה אך לא נמצאה תוצאה זמינה.');
-    log('ההורדה בשרת הסתיימה. מוריד את הקובץ למחשב…');
-    const zipUrl=link(`https://github.com/${OWNER}/${REPO}/actions/runs/${info.id}/artifacts/${artifact.id}`,'גיבוי: הורד ZIP מ-GitHub');
-    try {
-      const response=await fetchArtifact(artifact.id);
-      const zipBlob=await response.blob();            // בלי מגבלת זמן; Chrome שומר בלובים גדולים על הדיסק
-      const files=await extractZip(zipBlob);          // קורא רק את הכותרות, לא טוען את הסרטון לזיכרון
-      for(const f of files){
-        const url=URL.createObjectURL(f.blob);objectUrls.push(url);
-        const a=link(url,'⬇ '+f.name);a.className='f';a.download=f.name;
-        triggerBrowserDownload(url,f.name);
-        await sleep(1000);
-      }
-      log(files.length>1?'הקבצים ירדו לתיקיית ההורדות.':'הקובץ ירד לתיקיית ההורדות.','ok');
-    }catch(e){
-      log('ההורדה האוטומטית נכשלה ('+e.message+'). אפשר להשתמש בקישור הגיבוי.','bad');
+    const release=await (await gh('/releases/tags/'+encodeURIComponent('dl-'+id))).json();
+    if(release.draft)throw new Error('הקבצים עדיין לא פורסמו ב-Release.');
+    const assets=[];
+    for(let page=1;;page++) {
+      const batch=await (await gh('/releases/'+release.id+'/assets?per_page=100&page='+page)).json();
+      assets.push(...batch.filter(asset=>asset.state==='uploaded'));
+      if(batch.length<100)break;
     }
+    if(!assets.length)throw new Error('לא נמצאו קבצים שפורסמו ב-Release.');
+    link(release.html_url,'פתח את ה-Release ב-GitHub');
+    log('הקבצים פורסמו ב-Release. מתחיל הורדה ישירה…','ok');
+    for(const asset of assets) {
+      checkWait(deadline);
+      const a=link(asset.browser_download_url,'⬇ '+asset.name);a.download=asset.name;
+      triggerBrowserDownload(asset.browser_download_url,asset.name);
+      await sleep(1000);
+    }
+    log('נשלחו '+assets.length+' בקשות הורדה לדפדפן. אם הורדה לא התחילה, לחץ על קישור הקובץ. ה-Releases זמניים ונמחקים אוטומטית.','ok');
   }catch(e){log(e.message,'bad');}finally{setBusy(false);}
 }
 async function updateCookies() {
