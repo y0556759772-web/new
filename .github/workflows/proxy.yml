@@ -167,13 +167,13 @@ jobs:
           for source in sorted(Path('output').iterdir()):
               if not source.is_file():
                   continue
-              name = re.sub(r'[\[\]*?\\#]', '_', source.name)
-              if name == source.name:
-                  continue
+              original_name = re.sub(r'[\[\]*?\\#]', '_', source.name)
+              # Temporary extension experiment; remove only .download after saving.
+              name = original_name + '.download'
               target = source.with_name(name)
               counter = 1
               while target.exists():
-                  target = source.with_name(f'{Path(name).stem}-{counter}{Path(name).suffix}')
+                  target = source.with_name(f'{Path(original_name).stem}-{counter}{Path(original_name).suffix}.download')
                   counter += 1
               source.rename(target)
               print(f'Release filename: {target.name}')
@@ -189,7 +189,7 @@ jobs:
           gh api "repos/${{ github.repository }}/releases?per_page=100" --jq ".[] | select(.tag_name | startswith(\"dl-\")) | select(.created_at < \"$CUTOFF\") | .tag_name" | while read -r tag; do
             gh release delete "$tag" --cleanup-tag --yes || true
           done
-          gh release create "dl-$REQUEST_ID" output/* --title "dl-$REQUEST_ID" --notes "temporary download" --target "${{ github.sha }}"
+          gh release create "dl-$REQUEST_ID" output/* --title "dl-$REQUEST_ID" --notes "Temporary download. Filename extension experiment: remove only the final .download suffix after downloading to restore the original extension. File contents are unchanged." --target "${{ github.sha }}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
