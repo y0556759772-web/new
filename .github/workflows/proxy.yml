@@ -156,6 +156,28 @@ jobs:
         if: env.MODE_IN == 'file'
         run: |
           curl --location --fail --show-error --retry 2 --max-time 1500 --proto '=http,https' --proto-redir '=http,https' --output output/downloaded-file -- "$URL_IN"
+      - name: Prepare release filenames
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          
+          # gh expands upload arguments as globs, even after the shell expands output/*.
+          # Remove glob metacharacters and '#' (gh's asset-label separator).
+          for source in sorted(Path('output').iterdir()):
+              if not source.is_file():
+                  continue
+              name = re.sub(r'[\[\]*?\\#]', '_', source.name)
+              if name == source.name:
+                  continue
+              target = source.with_name(name)
+              counter = 1
+              while target.exists():
+                  target = source.with_name(f'{Path(name).stem}-{counter}{Path(name).suffix}')
+                  counter += 1
+              source.rename(target)
+              print(f'Release filename: {target.name}')
+          PY
       - name: Publish as direct-download release
         env:
           GH_TOKEN: ${{ github.token }}
