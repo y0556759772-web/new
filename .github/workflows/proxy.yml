@@ -156,27 +156,31 @@ jobs:
         if: env.MODE_IN == 'file'
         run: |
           curl --location --fail --show-error --retry 2 --max-time 1500 --proto '=http,https' --proto-redir '=http,https' --output output/downloaded-file -- "$URL_IN"
-      - name: Prepare release filenames
+      - name: Package and verify download ZIP
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
+          import os
+          import zipfile
           
-          # gh expands upload arguments as globs, even after the shell expands output/*.
-          # Remove glob metacharacters and '#' (gh's asset-label separator).
-          for source in sorted(Path('output').iterdir()):
-              if not source.is_file():
-                  continue
-              original_name = re.sub(r'[\[\]*?\\#]', '_', source.name)
-              # Temporary extension experiment; remove only .download after saving.
-              name = original_name + '.download'
-              target = source.with_name(name)
-              counter = 1
-              while target.exists():
-                  target = source.with_name(f'{Path(original_name).stem}-{counter}{Path(original_name).suffix}.download')
-                  counter += 1
-              source.rename(target)
-              print(f'Release filename: {target.name}')
+          files = sorted(path for path in Path('output').iterdir() if path.is_file())
+          if not files:
+              raise SystemExit('No downloaded files to package')
+          release_dir = Path('release')
+          release_dir.mkdir(exist_ok=True)
+          archive_path = release_dir / ('download-' + os.environ['REQUEST_ID'] + '.zip')
+          # Media is already compressed; ZIP_STORED avoids expensive recompression.
+          # Original filenames stay inside the archive, never passed to gh as globs.
+          with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+              for path in files:
+                  archive.write(path, arcname=path.name)
+          with zipfile.ZipFile(archive_path, 'r') as archive:
+              bad_file = archive.testzip()
+              if bad_file is not None:
+                  raise SystemExit(f'ZIP integrity check failed: {bad_file}')
+              if archive.namelist() != [path.name for path in files]:
+                  raise SystemExit('ZIP file list does not match downloaded files')
+          print(f'Created and verified {archive_path}: {len(files)} file(s)')
           PY
       - name: Publish as direct-download release
         env:
@@ -189,7 +193,7 @@ jobs:
           gh api "repos/${{ github.repository }}/releases?per_page=100" --jq ".[] | select(.tag_name | startswith(\"dl-\")) | select(.created_at < \"$CUTOFF\") | .tag_name" | while read -r tag; do
             gh release delete "$tag" --cleanup-tag --yes || true
           done
-          gh release create "dl-$REQUEST_ID" output/* --title "dl-$REQUEST_ID" --notes "Temporary download. Filename extension experiment: remove only the final .download suffix after downloading to restore the original extension. File contents are unchanged." --target "${{ github.sha }}"
+          gh release create "dl-$REQUEST_ID" "release/download-$REQUEST_ID.zip" --title "dl-$REQUEST_ID" --notes "Temporary download ZIP. Extract the archive to access the original files with their original extensions." --target "${{ github.sha }}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
