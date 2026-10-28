@@ -157,9 +157,9 @@ jobs:
         run: |
           curl --location --fail --show-error --retry 2 --max-time 1500 --proto '=http,https' --proto-redir '=http,https' --output output/downloaded-file -- "$URL_IN"
       - name: Publish as direct-download release
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           # remove old download releases (older than 5 hours) so the repo stays clean
