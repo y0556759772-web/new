@@ -103,6 +103,7 @@ small{color:var(--muted)}
   <div class="progress-heading"><strong id="progress-percent">ממתין לריצה</strong><span>הכנת הקובץ בשרת</span></div>
   <progress id="progress-bar" max="100" aria-label="אחוז שלבי ההכנה שהושלמו"></progress>
   <div id="progress-stage" role="status" aria-live="polite"></div>
+  <small id="progress-updated"></small>
   <div class="progress-times"><span id="progress-elapsed"></span><span id="progress-eta"></span></div>
   <small>האחוז מתייחס לשלבי העבודה, לא לגודל הקובץ. משך השלבים אינו אחיד. זמן שנותר הוא הערכה בלבד.</small>
 </div><div id="log" role="status" aria-live="polite">ממתין לבקשה.</div>
@@ -1197,9 +1198,12 @@ function token() {
 }
 async function gh(route, options={}) {
   let response;
+  if((options.method||'GET')==='GET' && route.startsWith('/actions/')) {
+    route+=(route.includes('?')?'&':'?')+'_poll='+Date.now()+'-'+Math.random().toString(36).slice(2);
+  }
   try {
     response=await fetch('https://api.github.com'+BASE+route, {
-      ...options, signal:AbortSignal.timeout(45000), headers:{
+      ...options, cache:'no-store', signal:options.signal||AbortSignal.timeout(45000), headers:{
         Accept:'application/vnd.github+json', Authorization:'Bearer '+token(),
         'X-GitHub-Api-Version':'2022-11-28', ...(options.body ? {'Content-Type':'application/json'} : {}),
         ...(options.headers||{})
@@ -1356,13 +1360,16 @@ function startDownloadProgress(){
   $('progress-bar').removeAttribute('value');
   $('progress-percent').textContent='ממתין לריצה';
   $('progress-stage').textContent='שולח בקשת הורדה ל־GitHub…';
+  $('progress-updated').textContent='';
   renderProgressTime();downloadProgress.timer=setInterval(renderProgressTime,1000);
 }
 async function loadProgressHistory(runs,current){
-  const previous=runs.find(r=>r.id!==current.id&&r.workflow_id===current.workflow_id&&r.head_sha===current.head_sha&&r.conclusion==='success');
+  const progress=downloadProgress;
+  const previous=runs.find(r=>r.id!==current.id&&r.workflow_id===current.workflow_id&&r.conclusion==='success');
   if(!previous)return;
   try{
-    const data=await (await gh('/actions/runs/'+previous.id+'/jobs')).json();
+    const data=await (await gh('/actions/runs/'+previous.id+'/jobs',{signal:AbortSignal.timeout(8000)})).json();
+    if(downloadProgress!==progress||progress.ended)return;
     const job=(data.jobs||[]).find(j=>j.name==='download');
     const modeStep=downloadProgress.mode==='file'?'Download direct file':'Download video';
     if(!job?.steps?.some(s=>s.name===modeStep&&s.conclusion==='success'))return;
@@ -1371,22 +1378,26 @@ async function loadProgressHistory(runs,current){
       const seconds=(Date.parse(step.completed_at)-Date.parse(step.started_at))/1000;
       if(Number.isFinite(seconds)&&seconds>=0)durations.set(step.name,seconds);
     }
-    downloadProgress.durations=durations;
+    progress.durations=durations;renderProgressTime();
   }catch{/* Historical timing is optional. */}
 }
 async function refreshDownloadProgress(info){
   if(cancelled)return;
   try{
-    const data=await (await gh('/actions/runs/'+info.id+'/jobs')).json();
+    const data=await (await gh('/actions/runs/'+info.id+'/jobs',{signal:AbortSignal.timeout(8000)})).json();
+    if(cancelled)return;
     const job=(data.jobs||[]).find(j=>j.name==='download');
     const steps=progressSteps(job);downloadProgress.steps=steps;
     if(!steps.length){$('progress-stage').textContent='ממתין לשרת פנוי ב־GitHub…';return;}
     const done=steps.filter(s=>s.status==='completed').length;
-    const percent=Math.floor(done/steps.length*100);
+    const percent=Math.min(99,Math.floor(done/steps.length*100));
     $('progress-bar').value=percent;
     $('progress-percent').textContent=percent+'% מהשלבים הושלמו';
     const active=steps.find(s=>s.status==='in_progress')||steps.find(s=>s.status!=='completed');
     $('progress-stage').textContent=active?(progressNames[active.name]||active.name)+' · '+done+' מתוך '+steps.length+' שלבים':'שלבי השרת הסתיימו — בודק את הקובץ…';
+    const stageText=$('progress-stage').textContent;
+    if(downloadProgress.lastStage!==stageText){downloadProgress.lastStage=stageText;log(stageText);}
+    $('progress-updated').textContent='עודכן עכשיו: '+new Date().toLocaleTimeString('he-IL');
     renderProgressTime();
   }catch{
     $('progress-stage').textContent='נתוני ההתקדמות אינם זמינים כרגע; המעקב אחר הריצה ממשיך';
@@ -1417,21 +1428,30 @@ async function run() {
   try {
     await gh('/dispatches',{method:'POST',body:JSON.stringify({event_type:'download',client_payload:{request_id:id,url,mode:$('mode').value,quality:$('quality').value,subs:($('subs').checked&&$('mode').value==='video'&&$('quality').value!=='mp3')?'he':'none'}})});
     log('הבקשה התקבלה. ממתין לפתיחת הריצה…');
-    let info;
+    let info, discoveryAttempts=0;
     const discoveryDeadline=Date.now()+180000;
     while(!info) {
-      checkWait(discoveryDeadline); await sleep(4000); checkWait(discoveryDeadline);
-      const data=await (await gh('/actions/runs?event=repository_dispatch&per_page=100')).json();
+      checkWait(discoveryDeadline);
+      discoveryAttempts++;
+      $('progress-stage').textContent='הבקשה התקבלה — מאתר את הריצה ב־GitHub…';
+      $('progress-updated').textContent='בדיקת מצב מספר '+discoveryAttempts;
+      let data;
+      try {data=await (await gh('/actions/runs?event=repository_dispatch&per_page=100',{signal:AbortSignal.timeout(8000)})).json();}
+      catch(e){$('progress-stage').textContent='עדכון המצב התעכב; מנסה שוב…';await sleep(3000);continue;}
       info=(data.workflow_runs||[]).find(r=>r.display_title==='dl-'+id);
-      if(info)await loadProgressHistory(data.workflow_runs||[],info);
+      if(info){
+        log('הריצה אותרה. מציג את שלבי ההכנה…');
+        void loadProgressHistory(data.workflow_runs||[],info).catch(()=>{});
+      }else await sleep(3000);
     }
     link(info.html_url,'פתח את הריצה ב-GitHub'); let previous='';
     while(info.status!=='completed') {
       checkWait(deadline);
       if(info.status!==previous){previous=info.status;log('מצב הריצה: '+info.status);}
       await refreshDownloadProgress(info);
-      await sleep(6000);checkWait(deadline);
-      info=await (await gh('/actions/runs/'+info.id)).json();
+      await sleep(3000);checkWait(deadline);
+      try{info=await (await gh('/actions/runs/'+info.id,{signal:AbortSignal.timeout(8000)})).json();}
+      catch(e){log('עדכון מצב הריצה התעכב; מנסה שוב.');}
     }
     await refreshDownloadProgress(info);
     checkWait(deadline);
