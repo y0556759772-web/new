@@ -43,6 +43,13 @@ small{color:var(--muted)}
 [hidden]{display:none!important}main{max-width:900px}.tabs{display:flex;gap:8px;margin:0 0 20px;padding:5px;background:var(--panel);border:1px solid var(--line);border-radius:12px}.tabs button{flex:1;background:transparent;color:var(--muted)}.tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}.connection{margin-bottom:16px;padding:12px;border:1px solid var(--line);border-radius:10px}.connection summary{color:var(--ink)}.selection{padding:12px;background:var(--panel);border-inline-start:4px solid var(--accent);border-radius:6px}.search-bar{display:flex;gap:10px}.search-bar input{flex:1;min-width:0}.filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.advanced{margin-top:16px}.advanced button{margin-top:12px}.video-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.video-card{display:flex;flex-direction:column;padding:0;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:12px;overflow:hidden;text-align:right;transition:transform .15s,border-color .15s}.video-card:hover{transform:translateY(-3px);border-color:var(--accent)}.video-visual{position:relative;width:100%;aspect-ratio:16/9;background:var(--line)}.video-visual img{display:block;width:100%;height:100%;object-fit:cover}.duration{position:absolute;bottom:8px;left:8px;background:#111d;color:white;border-radius:4px;padding:1px 6px;direction:ltr;font-size:.8rem}.video-info{padding:15px;width:100%}.video-info h3{font-size:1rem;margin:0 0 8px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.video-info p{font-size:.82rem;font-weight:400;color:var(--muted);margin:4px 0}.video-action{display:block;color:var(--accent);font-size:.85rem;margin-top:12px}.more-wrap{text-align:center}#search-status{font-size:.9rem;margin:16px 0 0}@media(max-width:600px){.filter-grid{grid-template-columns:1fr}.video-grid{grid-template-columns:1fr}.search-bar button{padding-inline:14px}body{padding:16px 10px}}
 
 #files a.zip-download{background:var(--accent);color:var(--accent-ink);font-weight:700;text-align:center;direction:rtl;padding:16px;font-size:1.1rem}
+
+.download-progress{margin:14px 0;padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.progress-heading{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}.progress-heading strong{color:var(--accent);font-size:1.1rem}.progress-heading span{color:var(--muted);font-size:.85rem}
+#progress-bar{display:block;width:100%;height:16px;border:0;border-radius:20px;overflow:hidden;accent-color:var(--accent);margin-bottom:12px}
+#progress-bar::-webkit-progress-bar{background:var(--line);border-radius:20px}#progress-bar::-webkit-progress-value{background:var(--accent);border-radius:20px;transition:width .4s ease}
+.progress-times{display:flex;gap:8px 22px;flex-wrap:wrap;margin:8px 0;color:var(--muted);font-size:.9rem}.download-progress small{display:block;font-size:.78rem}
+.download-progress[data-state=success] .progress-heading strong{color:var(--ok)}.download-progress[data-state=error]{border-color:var(--bad)}
 </style>
 <style>[hidden]{display:none!important}#protected-app{width:100%;display:flex;justify-content:center}#access-gate{width:min(100%,440px);margin:8vh auto;padding:38px;border-radius:24px;box-shadow:0 20px 65px #163a6a18}#access-gate h1{font-size:1.8rem}#access-gate p{color:var(--muted)}#access-gate button{width:100%;margin-top:18px;border-radius:12px}#access-code{border-radius:12px;font-size:1.3rem;text-align:center;letter-spacing:3px}.gate-icon{display:grid;place-items:center;width:56px;height:56px;border-radius:18px;background:var(--accent);color:white;margin-bottom:20px}#access-error{min-height:26px;color:var(--bad)!important}#site-lock{margin-bottom:18px}</style></head>
 <body><section id="access-gate" aria-labelledby="access-title"><div class="gate-icon">▶</div><h1 id="access-title">המרחב האישי שלך</h1><p>חיפוש והורדות YouTube במקום אחד</p><form id="access-form"><label for="access-code">קוד גישה</label><input id="access-code" type="password" inputmode="numeric" autocomplete="off" required autofocus dir="ltr" placeholder="הקלד את קוד הגישה"><button type="submit">כניסה לאתר ←</button><p id="access-error" role="alert"></p></form><small>הכניסה מיועדת לבעלי קוד גישה</small></section><noscript>יש להפעיל JavaScript כדי להשתמש באתר.</noscript><div id="protected-app" hidden inert>
@@ -92,7 +99,13 @@ small{color:var(--muted)}
 
   <section>
     <h2>סטטוס</h2>
-    <button id="cancel" class="ghost" hidden>הפסק מעקב</button><div id="log" role="status" aria-live="polite">ממתין לבקשה.</div>
+    <button id="cancel" class="ghost" hidden>הפסק מעקב</button><div id="download-progress" class="download-progress" hidden>
+  <div class="progress-heading"><strong id="progress-percent">ממתין לריצה</strong><span>הכנת הקובץ בשרת</span></div>
+  <progress id="progress-bar" max="100" aria-label="אחוז שלבי ההכנה שהושלמו"></progress>
+  <div id="progress-stage" role="status" aria-live="polite"></div>
+  <div class="progress-times"><span id="progress-elapsed"></span><span id="progress-eta"></span></div>
+  <small>האחוז מתייחס לשלבי העבודה, לא לגודל הקובץ. משך השלבים אינו אחיד. זמן שנותר הוא הערכה בלבד.</small>
+</div><div id="log" role="status" aria-live="polite">ממתין לבקשה.</div>
     <div id="files"></div>
   </section>
 </div><div id="panel-search" role="tabpanel" aria-labelledby="tab-search" hidden>
@@ -1300,10 +1313,105 @@ async function extractZip(blob) {
   if(!out.length) throw new Error('לא נמצאו קבצים בתוצאה');
   return out;
 }
+let downloadProgress=null;
+const progressNames={
+  'Set up job':'הכנת סביבת העבודה', 'Validate request':'בדיקת הבקשה',
+  'Install yt-dlp and ffmpeg':'התקנת כלי ההורדה', 'Start PO token provider':'התחברות לשירות ההורדה',
+  'Download video':'הורדת הסרטון ועיבודו', 'Download direct file':'הורדת הקובץ',
+  'Package and verify download ZIP':'אריזת ZIP ובדיקת תקינות',
+  'Prepare release filenames':'הכנת שמות הקבצים',
+  'Publish as direct-download release':'פרסום הקובץ ב־Release',
+  'Upload artifact':'שמירת עותק גיבוי', 'Complete job':'סיום הריצה'
+};
+function progressDuration(seconds){
+  seconds=Math.max(0,Math.round(seconds));
+  return seconds<60?seconds+' שניות':Math.floor(seconds/60)+' דקות ו־'+seconds%60+' שניות';
+}
+function progressSteps(job){
+  const excluded=downloadProgress.mode==='file'?['Install yt-dlp and ffmpeg','Start PO token provider','Download video']:['Download direct file'];
+  return (job?.steps||[]).filter(s=>!excluded.includes(s.name)&&s.conclusion!=='skipped');
+}
+function renderProgressTime(){
+  const p=downloadProgress;if(!p)return;
+  $('progress-elapsed').textContent='זמן שעבר: '+progressDuration((p.ended||Date.now())/1000-p.started/1000);
+  if(p.ended)return;
+  if(!p.steps?.length||!p.durations){$('progress-eta').textContent='זמן שנותר: עדיין אין מספיק נתונים להערכה';return;}
+  let seconds=0;
+  for(const step of p.steps.filter(s=>s.status!=='completed')){
+    if(!p.durations.has(step.name)){$('progress-eta').textContent='זמן שנותר: עדיין אין מספיק נתונים להערכה';return;}
+    let remaining=p.durations.get(step.name);
+    if(step.status==='in_progress'&&step.started_at){
+      remaining-=(Date.now()-Date.parse(step.started_at))/1000;
+      if(remaining<=0){$('progress-eta').textContent='השלב נמשך יותר מהריצה הקודמת — ממתין לעדכון';return;}
+    }
+    seconds+=Math.max(0,remaining);
+  }
+  $('progress-eta').textContent=seconds?'נותר בקירוב: '+progressDuration(seconds)+' · לפי ריצה קודמת, עשוי להשתנות':'בודק שהקובץ זמין להורדה…';
+}
+function startDownloadProgress(){
+  if(downloadProgress?.timer)clearInterval(downloadProgress.timer);
+  downloadProgress={started:Date.now(),mode:$('mode').value,steps:null,durations:null};
+  $('download-progress').hidden=false;
+  $('download-progress').dataset.state='running';
+  $('progress-bar').removeAttribute('value');
+  $('progress-percent').textContent='ממתין לריצה';
+  $('progress-stage').textContent='שולח בקשת הורדה ל־GitHub…';
+  renderProgressTime();downloadProgress.timer=setInterval(renderProgressTime,1000);
+}
+async function loadProgressHistory(runs,current){
+  const previous=runs.find(r=>r.id!==current.id&&r.workflow_id===current.workflow_id&&r.head_sha===current.head_sha&&r.conclusion==='success');
+  if(!previous)return;
+  try{
+    const data=await (await gh('/actions/runs/'+previous.id+'/jobs')).json();
+    const job=(data.jobs||[]).find(j=>j.name==='download');
+    const modeStep=downloadProgress.mode==='file'?'Download direct file':'Download video';
+    if(!job?.steps?.some(s=>s.name===modeStep&&s.conclusion==='success'))return;
+    const durations=new Map();
+    for(const step of progressSteps(job)){
+      const seconds=(Date.parse(step.completed_at)-Date.parse(step.started_at))/1000;
+      if(Number.isFinite(seconds)&&seconds>=0)durations.set(step.name,seconds);
+    }
+    downloadProgress.durations=durations;
+  }catch{/* Historical timing is optional. */}
+}
+async function refreshDownloadProgress(info){
+  if(cancelled)return;
+  try{
+    const data=await (await gh('/actions/runs/'+info.id+'/jobs')).json();
+    const job=(data.jobs||[]).find(j=>j.name==='download');
+    const steps=progressSteps(job);downloadProgress.steps=steps;
+    if(!steps.length){$('progress-stage').textContent='ממתין לשרת פנוי ב־GitHub…';return;}
+    const done=steps.filter(s=>s.status==='completed').length;
+    const percent=Math.floor(done/steps.length*100);
+    $('progress-bar').value=percent;
+    $('progress-percent').textContent=percent+'% מהשלבים הושלמו';
+    const active=steps.find(s=>s.status==='in_progress')||steps.find(s=>s.status!=='completed');
+    $('progress-stage').textContent=active?(progressNames[active.name]||active.name)+' · '+done+' מתוך '+steps.length+' שלבים':'שלבי השרת הסתיימו — בודק את הקובץ…';
+    renderProgressTime();
+  }catch{
+    $('progress-stage').textContent='נתוני ההתקדמות אינם זמינים כרגע; המעקב אחר הריצה ממשיך';
+    downloadProgress.steps=null;renderProgressTime();
+  }
+}
+function finishDownloadProgress(state){
+  const p=downloadProgress;if(!p)return;
+  clearInterval(p.timer);p.ended=Date.now();$('download-progress').dataset.state=state;
+  if(state==='success'){
+    $('progress-bar').value=100;$('progress-percent').textContent='100% — הקובץ מוכן';
+    $('progress-stage').textContent='הקובץ פורסם. בקשת ההורדה נשלחה לדפדפן.';
+    $('progress-eta').textContent='המשך ההתקדמות מופיע בחלון ההורדות של הדפדפן. אם לא התחיל, לחץ על קישור הקובץ.';
+  }else{
+    if(!$('progress-bar').hasAttribute('value'))$('progress-bar').value=0;
+    $('progress-stage').textContent=state==='cancelled'?'המעקב הופסק; הריצה ב־GitHub ממשיכה':'התהליך לא הושלם — ראה פירוט למטה';
+    $('progress-eta').textContent='';
+  }
+  renderProgressTime();
+}
+
 async function run() {
   if(busy)return;
   let url; try {token();url=validUrl($('url').value.trim());} catch(e){log(e.message,'bad');return;}
-  resetLog(); setBusy(true); cancelled=false;
+  resetLog(); setBusy(true); cancelled=false; startDownloadProgress();
   for(const url of objectUrls.splice(0))URL.revokeObjectURL(url);
   const id=crypto.randomUUID(), deadline=Date.now()+35*60*1000;
   try {
@@ -1315,14 +1423,18 @@ async function run() {
       checkWait(discoveryDeadline); await sleep(4000); checkWait(discoveryDeadline);
       const data=await (await gh('/actions/runs?event=repository_dispatch&per_page=100')).json();
       info=(data.workflow_runs||[]).find(r=>r.display_title==='dl-'+id);
+      if(info)await loadProgressHistory(data.workflow_runs||[],info);
     }
     link(info.html_url,'פתח את הריצה ב-GitHub'); let previous='';
     while(info.status!=='completed') {
       checkWait(deadline);
       if(info.status!==previous){previous=info.status;log('מצב הריצה: '+info.status);}
+      await refreshDownloadProgress(info);
       await sleep(6000);checkWait(deadline);
       info=await (await gh('/actions/runs/'+info.id)).json();
     }
+    await refreshDownloadProgress(info);
+    checkWait(deadline);
     if(info.conclusion!=='success') {
       const jobs=await (await gh('/actions/runs/'+info.id+'/jobs')).json();
       const failed=(jobs.jobs||[]).flatMap(j=>j.steps||[]).filter(s=>s.conclusion==='failure').map(s=>s.name);
@@ -1346,7 +1458,8 @@ async function run() {
       await sleep(1000);
     }
     log('נשלחו '+assets.length+' בקשות הורדה לדפדפן. אם הורדה לא התחילה, לחץ על קישור הקובץ. ה-Releases זמניים ונמחקים אוטומטית.','ok');
-  }catch(e){log(e.message,'bad');}finally{setBusy(false);}
+    finishDownloadProgress('success');
+  }catch(e){log(e.message,'bad');finishDownloadProgress(cancelled?'cancelled':'error');}finally{setBusy(false);}
 }
 async function updateCookies() {
   if(busy)return; let cookies;
