@@ -89,7 +89,7 @@ jobs:
         run: |
           sudo apt-get update -y -qq
           sudo apt-get install -y -qq ffmpeg
-          python3 -m pip install -U --pre 'yt-dlp[default]' bgutil-ytdlp-pot-provider
+          python3 -m pip install -U --pre 'yt-dlp[default,curl-cffi]' bgutil-ytdlp-pot-provider
           curl --fail --silent --show-error --location https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
       - name: Start PO token provider
