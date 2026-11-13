@@ -96,6 +96,7 @@ jobs:
           PY
           ARGS=(--ignore-config --no-playlist --no-progress --newline --socket-timeout 30 --retries 3 --fragment-retries 3 --js-runtimes deno --extractor-args 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416' --restrict-filenames --trim-filenames 160 -o 'output/%(title)s [%(id)s].%(ext)s')
           ARGS+=(--extractor-args "youtube:player_client=mweb")
+          if [ -f "$COOKIE_PATH" ]; then ARGS+=(--cookies "$COOKIE_PATH"); fi
           if [ -n "$YT_PROXY" ]; then ARGS+=(--proxy "$YT_PROXY"); echo 'proxy: enabled'; fi
           if [ "$QUALITY_IN" = mp3 ]; then
             ARGS+=(-x --audio-format mp3)
