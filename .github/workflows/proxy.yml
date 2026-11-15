@@ -105,6 +105,35 @@ jobs:
           echo 'PO token provider did not start'
           docker logs bgutil-provider || true
           exit 1
+      - name: Start Cloudflare WARP (proxy mode)
+        if: env.MODE_IN == 'video'
+        continue-on-error: true
+        run: |
+          set -eu
+          # Official Cloudflare WARP client, run in local SOCKS5 proxy mode only (127.0.0.1:40000),
+          # so the runner's own connection (GitHub agent, docker, apt) is not touched.
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq cloudflare-warp
+          sleep 3
+          # command names differ between WARP client versions, so each has a fallback
+          warp-cli --accept-tos registration new || warp-cli --accept-tos register
+          warp-cli --accept-tos mode proxy || warp-cli --accept-tos set-mode proxy
+          warp-cli --accept-tos connect
+          for i in $(seq 1 20); do
+            TRACE=$(curl -sf --max-time 10 --proxy socks5h://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace || true)
+            if echo "$TRACE" | grep -Eq '^warp=(on|plus)'; then
+              echo "$TRACE" | grep -E '^(ip|warp|loc)='
+              echo 'WARP_PROXY=socks5h://127.0.0.1:40000' >> "$GITHUB_ENV"
+              echo 'WARP is up'
+              exit 0
+            fi
+            sleep 3
+          done
+          echo 'WARP did not come up; continuing without it'
+          warp-cli --accept-tos status || true
+          exit 1
       - name: Download video
         if: env.MODE_IN == 'video'
         env:
@@ -143,7 +172,13 @@ jobs:
 
           # Base arguments shared by every attempt
           ARGS=(--ignore-config --no-playlist --no-progress --newline --socket-timeout 30 --retries 5 --fragment-retries 5 --sleep-requests 1 --js-runtimes deno --extractor-args 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416' --restrict-filenames --trim-filenames 160 -o 'output/%(title)s [%(id)s].%(ext)s')
-          if [ -n "${YT_PROXY:-}" ]; then ARGS+=(--proxy "$YT_PROXY"); echo 'proxy: enabled'; fi
+          if [ -n "${YT_PROXY:-}" ]; then
+            ARGS+=(--proxy "$YT_PROXY"); echo 'proxy: YT_PROXY secret'
+          elif [ -n "${WARP_PROXY:-}" ]; then
+            ARGS+=(--proxy "$WARP_PROXY"); echo 'proxy: Cloudflare WARP'
+          else
+            echo 'proxy: none'
+          fi
           if [ "$QUALITY_IN" = mp3 ]; then
             ARGS+=(-x --audio-format mp3)
           else
@@ -186,14 +221,15 @@ jobs:
             if [ -n "$EXTRA" ]; then CUR+=(--extractor-args "$EXTRA"); fi
             rm -rf output/*
             echo "::group::attempt $N (${KIND}, ${EXTRA:-default client})"
-            if yt-dlp "${CUR[@]}" -- "$URL_IN"; then
+            if yt-dlp "${CUR[@]}" -- "$URL_IN" 2>&1 | tee "$RUNNER_TEMP/attempt-$N.log"; then
               echo "::endgroup::"
               echo "attempt $N succeeded"
               OK=1
               break
             fi
             echo "::endgroup::"
-            echo "attempt $N failed"
+            echo "attempt $N failed. Key lines:"
+            grep -E 'ERROR|WARNING|HTTP Error|Sign in|PO Token|po_token' "$RUNNER_TEMP/attempt-$N.log" | sort -u | tail -6 || true
             sleep 3
           done
 
