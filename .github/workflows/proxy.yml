@@ -92,15 +92,18 @@ jobs:
           python3 -m pip install -U --pre 'yt-dlp[default,curl-cffi]' bgutil-ytdlp-pot-provider
           curl --fail --silent --show-error --location https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+          yt-dlp --version
       - name: Start PO token provider
         if: env.MODE_IN == 'video'
         run: |
+          docker pull brainicism/bgutil-ytdlp-pot-provider
           docker run -d --name bgutil-provider -p 127.0.0.1:4416:4416 brainicism/bgutil-ytdlp-pot-provider
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:4416/ping >/dev/null; then exit 0; fi
             sleep 2
           done
           echo 'PO token provider did not start'
+          docker logs bgutil-provider || true
           exit 1
       - name: Download video
         if: env.MODE_IN == 'video'
@@ -137,9 +140,10 @@ jobs:
               if not active:
                   raise SystemExit('cookies check: no unexpired YouTube cookies; update YT_COOKIES')
           PY
-          ARGS=(--ignore-config --no-playlist --no-progress --newline --socket-timeout 30 --retries 3 --fragment-retries 3 --js-runtimes deno --extractor-args 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416' --restrict-filenames --trim-filenames 160 -o 'output/%(title)s [%(id)s].%(ext)s')
-          if [ -f "$COOKIE_PATH" ]; then ARGS+=(--cookies "$COOKIE_PATH"); fi
-          if [ -n "$YT_PROXY" ]; then ARGS+=(--proxy "$YT_PROXY"); echo 'proxy: enabled'; fi
+
+          # Base arguments shared by every attempt
+          ARGS=(--ignore-config --no-playlist --no-progress --newline --socket-timeout 30 --retries 5 --fragment-retries 5 --sleep-requests 1 --js-runtimes deno --extractor-args 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416' --restrict-filenames --trim-filenames 160 -o 'output/%(title)s [%(id)s].%(ext)s')
+          if [ -n "${YT_PROXY:-}" ]; then ARGS+=(--proxy "$YT_PROXY"); echo 'proxy: enabled'; fi
           if [ "$QUALITY_IN" = mp3 ]; then
             ARGS+=(-x --audio-format mp3)
           else
@@ -151,7 +155,53 @@ jobs:
               ARGS+=(--write-subs --write-auto-subs --sub-langs 'he,iw,he-orig' --embed-subs)
             fi
           fi
-          yt-dlp "${ARGS[@]}" -- "$URL_IN"
+
+          # Fallback chain: "cookies|anon" and the player_client extractor-arg ("" = yt-dlp default).
+          # A 403 on the media data is often tied to one specific client or to the session,
+          # so each attempt changes the client and/or drops the cookies.
+          ATTEMPTS=(
+            "cookies|"
+            "cookies|youtube:player_client=tv,web_safari"
+            "cookies|youtube:player_client=mweb"
+            "anon|youtube:player_client=android_vr"
+            "anon|youtube:player_client=tv,web_safari"
+            "anon|"
+          )
+
+          OK=0
+          N=0
+          for entry in "${ATTEMPTS[@]}"; do
+            N=$((N + 1))
+            KIND="${entry%%|*}"
+            EXTRA="${entry#*|}"
+            CUR=("${ARGS[@]}")
+            if [ "$KIND" = cookies ]; then
+              if [ -f "$COOKIE_PATH" ]; then
+                CUR+=(--cookies "$COOKIE_PATH")
+              else
+                echo "attempt $N skipped: no cookies available"
+                continue
+              fi
+            fi
+            if [ -n "$EXTRA" ]; then CUR+=(--extractor-args "$EXTRA"); fi
+            rm -rf output/*
+            echo "::group::attempt $N (${KIND}, ${EXTRA:-default client})"
+            if yt-dlp "${CUR[@]}" -- "$URL_IN"; then
+              echo "::endgroup::"
+              echo "attempt $N succeeded"
+              OK=1
+              break
+            fi
+            echo "::endgroup::"
+            echo "attempt $N failed"
+            sleep 3
+          done
+
+          if [ "$OK" -ne 1 ]; then
+            echo 'All download attempts failed. PO token provider log (tail):'
+            docker logs --tail 30 bgutil-provider || true
+            exit 1
+          fi
       - name: Download direct file
         if: env.MODE_IN == 'file'
         run: |
@@ -162,7 +212,7 @@ jobs:
           from pathlib import Path
           import os
           import zipfile
-          
+
           files = sorted(path for path in Path('output').iterdir() if path.is_file())
           if not files:
               raise SystemExit('No downloaded files to package')
