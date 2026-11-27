@@ -97,7 +97,7 @@ jobs:
         if: env.MODE_IN == 'video'
         run: |
           docker pull brainicism/bgutil-ytdlp-pot-provider
-          docker run -d --name bgutil-provider -p 127.0.0.1:4416:4416 brainicism/bgutil-ytdlp-pot-provider
+          docker run -d --name bgutil-provider --network host brainicism/bgutil-ytdlp-pot-provider
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:4416/ping >/dev/null; then exit 0; fi
             sleep 2
@@ -171,7 +171,7 @@ jobs:
           PY
 
           # Base arguments shared by every attempt
-          ARGS=(--ignore-config --no-playlist --no-progress --newline --socket-timeout 30 --retries 5 --fragment-retries 5 --sleep-requests 1 --js-runtimes deno --extractor-args 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416' --restrict-filenames --trim-filenames 160 -o 'output/%(title)s [%(id)s].%(ext)s')
+          ARGS=(--ignore-config --no-playlist --no-progress --newline --socket-timeout 30 --retries 5 --fragment-retries 5 --sleep-requests 1 --js-runtimes deno --extractor-args 'youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416' --restrict-filenames --trim-filenames 160 -o 'output/video_%(title)s [%(id)s].%(ext)s')
           if [ -n "${YT_PROXY:-}" ]; then
             ARGS+=(--proxy "$YT_PROXY"); echo 'proxy: YT_PROXY secret'
           elif [ -n "${WARP_PROXY:-}" ]; then
@@ -280,11 +280,14 @@ jobs:
             gh release delete "$tag" --cleanup-tag --yes || true
           done
           gh release create "dl-$REQUEST_ID" "release/download-$REQUEST_ID.zip" --title "dl-$REQUEST_ID" --notes "Temporary download ZIP. Extract the archive to access the original files with their original extensions." --target "${{ github.sha }}"
+      - name: List output files
+        run: ls -la output release
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: result-${{ env.REQUEST_ID }}
-          path: output/*
+          path: output/
+          include-hidden-files: true
           retention-days: 1
           if-no-files-found: error
           compression-level: 0
